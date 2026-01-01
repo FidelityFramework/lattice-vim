@@ -1,4 +1,3 @@
--- DEPRECATED: Use require('fidelity') instead
 local vim = vim
 local validate = vim.validate
 local api = vim.api
@@ -17,10 +16,13 @@ local lspconfig_is_present = true
 local util = try_require('lspconfig.util')
 if util == nil then
   lspconfig_is_present = false
-  util = require('ionide.util')
+  util = require('fidelity.util')
 end
 
 local M = {}
+
+-- Fidelity version - keep in sync across all Fidelity packages
+M.version = "0.1.0"
 
 local function create_handlers()
   local handlers = fn['fsharp#get_handlers']()
@@ -41,10 +43,11 @@ local function get_default_config()
   fn['fsharp#loadConfig']()
 
   local auto_init = vim.g['fsharp#automatic_workspace_init']
-  result.name = "ionide"
+  result.name = "fidelity"
   result.cmd = vim.g['fsharp#fsautocomplete_command']
   result.cmd_env = { DOTNET_ROLL_FORWARD = "LatestMajor" }
-  result.root_dir = util.root_pattern("*.sln", "*.fsproj", ".git", "*.fsx")
+  -- Include .fidproj for native F# projects
+  result.root_dir = util.root_pattern("*.fidproj", "*.sln", "*.fsproj", ".git", "*.fsx", "*.fsnx")
   result.filetypes = {"fsharp"}
   result.autostart = true
   result.handlers = create_handlers()
@@ -76,17 +79,18 @@ end
 local function delegate_to_lspconfig(config)
   local lspconfig = require('lspconfig')
   local configs = require('lspconfig.configs')
-  if not (configs['ionide']) then
-    configs['ionide'] = {
+  if not (configs['fidelity']) then
+    configs['fidelity'] = {
       default_config = get_default_config(),
       docs = {
         description = [[
-  https://github.com/ionide/Ionide-vim
+  https://github.com/FidelityFramework/fidelity-vim-fsharp
+  F# Native Language Support, powered by FsNativeAutoComplete
         ]],
       },
     }
   end
-  lspconfig.ionide.setup(config)
+  lspconfig.fidelity.setup(config)
 end
 
 M.manager = nil

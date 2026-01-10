@@ -113,6 +113,38 @@ sources = ["Program.fs"]
 output = "my_project"
 ```
 
+## Multi-LSP Development
+
+For full Fidelity development with MLIR inspection, configure additional language servers:
+
+```lua
+-- In your Neovim config
+local lspconfig = require('lspconfig')
+
+-- MLIR language server (for viewing generated IR)
+lspconfig.mlir_lsp_server.setup {
+    cmd = { 'mlir-lsp-server' },
+    filetypes = { 'mlir' },
+    root_dir = lspconfig.util.root_pattern('*.fidproj', '.git'),
+}
+```
+
+### Source Navigation (Future)
+
+When Firefly emits `loc()` attributes in MLIR, you'll be able to navigate between F# source and generated IR:
+
+```lua
+-- Jump from F# to corresponding MLIR
+vim.keymap.set('n', '<leader>fm', function()
+    require('fidelity.mlir_nav').jump_to_mlir()
+end, { desc = "Jump to MLIR" })
+
+-- Jump from MLIR loc() back to F# source
+vim.keymap.set('n', '<leader>fs', function()
+    require('fidelity.mlir_nav').jump_to_source()
+end, { desc = "Jump to F# source" })
+```
+
 ## The Fidelity Ecosystem
 
 | Project | Role |

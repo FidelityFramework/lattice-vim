@@ -16,7 +16,7 @@ local lspconfig_is_present = true
 local util = try_require('lspconfig.util')
 if util == nil then
   lspconfig_is_present = false
-  util = require('ionide.util')
+  util = require('lattice.util')
 end
 
 local M = {}
@@ -40,7 +40,7 @@ local function get_default_config()
   fn['fsharp#loadConfig']()
 
   local auto_init = vim.g['fsharp#automatic_workspace_init']
-  result.name = "ionide"
+  result.name = "lattice"
   result.cmd = vim.g['fsharp#fsautocomplete_command']
   result.cmd_env = { DOTNET_ROLL_FORWARD = "LatestMajor" }
   result.root_dir = util.root_pattern("*.sln", "*.fsproj", ".git", "*.fsx")
@@ -75,8 +75,8 @@ end
 local function delegate_to_lspconfig(config)
   local lspconfig = require('lspconfig')
   local configs = require('lspconfig.configs')
-  if not (configs['ionide']) then
-    configs['ionide'] = {
+  if not (configs['lattice']) then
+    configs['lattice'] = {
       default_config = get_default_config(),
       docs = {
         description = [[
@@ -85,7 +85,7 @@ local function delegate_to_lspconfig(config)
       },
     }
   end
-  lspconfig.ionide.setup(config)
+  lspconfig.lattice.setup(config)
 end
 
 M.manager = nil
@@ -123,7 +123,7 @@ local function create_manager(config)
     root_dir = string.gsub(root_dir, "\\", "/")
     api.nvim_command(
       string.format(
-        "autocmd %s lua require'ionide'.manager.try_add_wrapper()",
+        "autocmd %s lua require'lattice'.manager.try_add_wrapper()",
         "BufReadPost " .. root_dir .. "/*"
       )
     )
@@ -179,7 +179,7 @@ local function create_manager(config)
       else
         api.nvim_command(
           string.format(
-            "autocmd BufEnter <buffer=%d> ++once lua require'ionide'._setup_buffer(%d,%d)",
+            "autocmd BufEnter <buffer=%d> ++once lua require'lattice'._setup_buffer(%d,%d)",
             bufnr,
             client.id,
             bufnr

@@ -20,7 +20,7 @@ setl comments=s0:*\ -,m0:*\ \ ,ex0:*),s1:(*,mb:*,ex:*),:\/\/\/,:\/\/
 let b:undo_ftplugin = 'setl fo< cms< com< fdm<'
 
 if has('nvim-0.5')
-    lua ionide = require("ionide")
+    lua lattice = require("lattice")
 endif
 
 " load configurations

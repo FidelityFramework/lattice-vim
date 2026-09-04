@@ -13,7 +13,7 @@ set cpo&vim
 let s:script_root_dir = expand('<sfile>:p:h') . "/../"
 
 if has('nvim-0.5')
-    lua ionide = require("ionide")
+    lua lattice = require("lattice")
 endif
 
 function! s:prompt(msg)
@@ -103,7 +103,7 @@ function! s:call(method, params, cont)
         call LanguageClient#Call(a:method, a:params, a:cont)
     elseif g:fsharp#backend == 'nvim'
         let key = fsharp#register_callback(a:cont)
-        call luaeval('ionide.call(_A[1], _A[2], _A[3])', [a:method, a:params, key])
+        call luaeval('lattice.call(_A[1], _A[2], _A[3])', [a:method, a:params, key])
     endif
 endfunction
 
@@ -111,7 +111,7 @@ function! s:notify(method, params)
     if g:fsharp#backend == 'languageclient-neovim'
         call LanguageClient#Notify(a:method, a:params)
     elseif g:fsharp#backend == 'nvim'
-        call luaeval('ionide.notify(_A[1], _A[2])', [a:method, a:params])
+        call luaeval('lattice.notify(_A[1], _A[2])', [a:method, a:params])
     endif
 endfunction
 

@@ -41,6 +41,19 @@ The gate runs in real headless Neovim against a small [stdio fixture server](tes
 
 The fixture's `FIXTURE001` diagnostic and hover text test transport only. They are not CCS type checking or proof results. The compiler integration gate remains the shared measured-type fixture: hover preserves dimensional identity, an incompatible-dimension edit produces the compiler's diagnostic, and a correction clears it without stale results replacing current ones. Proof evidence and its invalidation must follow compiler-owned query contracts as they land. Plain Vim needs a separate client gate before claiming support.
 
+## Planned target-aware compiler integration — 2026-09-20
+
+[Composer M-01 §5](../Composer/docs/PRDs/M-01-DialectAdmission.md#5-numeric-selection-parallelism-and-design-time-projection)
+adds target-specific numeric and concurrency evidence to the CCS/Lattice plan.
+The client displays compiler-owned profile, capability and obligation results;
+it does not infer representation choices or wait relationships. The pending
+Neovim semantic gate should include exact diagnostics and unsaved repair after
+a target capability change, preserving graph/source version and rejecting stale
+responses. Protocol-fixture success remains distinct from compiler acceptance.
+No richer query support or Plain Vim implementation is claimed by this planning
+update. Coordinated revisions belong to the
+[coverage waypoints](../Composer/docs/Language_Coverage_Waypoints.md).
+
 ## Heritage
 
 The long-form [upstream README](README.mkd) and [Vim help](doc/vim-fsharp.txt) describe the inherited Ionide-vim behavior. Preserve them as heritage rather than using their FSAC commands as Lattice setup instructions. See [IONIDE_HERITAGE.md](IONIDE_HERITAGE.md) and [LICENSE.md](LICENSE.md) for attribution. Ionide-vim is the work of the Ionide community.

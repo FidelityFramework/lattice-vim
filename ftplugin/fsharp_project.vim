@@ -1,5 +1,9 @@
 " Vim filetype plugin
 
+" Retained Ionide reference; CCS owns Clef project loading. Do not activate the
+" inherited FSAC project-write callback in this fork.
+finish
+
 if exists('b:did_fsharp_project_ftplugin')
     finish
 endif

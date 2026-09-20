@@ -1,17 +1,3 @@
-let s:cpo_save = &cpo
-set cpo&vim
-
-" load configurations
-call fsharp#loadConfig()
-
-" auto setup nvim-lsp
-let s:did_lsp_setup = 0
-if g:fsharp#backend == 'nvim' && g:fsharp#lsp_auto_setup && !s:did_lsp_setup
-    let s:did_lsp_setup = 1
-    lua lattice.setup{}
-endif
-
-let &cpo = s:cpo_save
-unlet s:cpo_save
-
-" vim: sw=4 et sts=4
+" The automatic Ionide/FSAC activation is retired in this fork.
+" Neovim Clef integration is configured explicitly with require('lattice').setup.
+" See README.md. Loading this plugin does not select or install a server.

@@ -1,5 +1,9 @@
 " Vim filetype plugin
 
+" Retained Ionide implementation reference. Its FSAC/FSI callbacks are not the
+" Clef protocol and must not be redirected into the Lattice client.
+finish
+
 if exists('b:did_fsharp_ftplugin')
     finish
 endif

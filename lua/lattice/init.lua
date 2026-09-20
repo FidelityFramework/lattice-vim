@@ -1,276 +1,125 @@
-local vim = vim
-local validate = vim.validate
-local api = vim.api
-local lsp = vim.lsp
-local uv = vim.loop
-local fn = vim.fn
-local tbl_extend = vim.tbl_extend
-
-function try_require(...)
-  local status, lib = pcall(require, ...)
-  if(status) then return lib end
-  return nil
-end
-
-local lspconfig_is_present = true
-local util = try_require('lspconfig.util')
-if util == nil then
-  lspconfig_is_present = false
-  util = require('lattice.util')
-end
-
+-- Thin Clef registration over Neovim's standard LSP client.
+-- Project interpretation and semantic facts belong to the configured CCS server.
 local M = {}
+local command
+local clients = {}
+local stopping_clients = false
+local group = 'LatticeClef'
 
-local function create_handlers()
-  local handlers = fn['fsharp#get_handlers']()
-  local result = {}
-  for method, func_name in pairs(handlers) do
-    local handler = function(err, params, ctx, _config)
-      if params == nil or not (method == ctx.method) then return end
-      fn[func_name](params)
+local function stop_clients()
+  stopping_clients = true
+  local stopping = {}
+  for id in pairs(clients) do
+    local client = vim.lsp.get_client_by_id(id)
+    if client then
+      table.insert(stopping, client)
+      client:stop()
     end
-    result[method] = handler
   end
-  M.handlers = result
-  return result
-end
-
-local function get_default_config()
-  local result = {}
-  fn['fsharp#loadConfig']()
-
-  local auto_init = vim.g['fsharp#automatic_workspace_init']
-  result.name = "lattice"
-  result.cmd = vim.g['fsharp#fsautocomplete_command']
-  result.cmd_env = { DOTNET_ROLL_FORWARD = "LatestMajor" }
-  result.root_dir = util.root_pattern("*.sln", "*.fsproj", ".git", "*.fsx")
-  result.filetypes = {"fsharp"}
-  result.autostart = true
-  result.handlers = create_handlers()
-  result.init_options = { AutomaticWorkspaceInit = (auto_init == 1) }
-  result.on_init = function() fn['fsharp#initialize']() end
-
-  return result
-end
-
--- https://github.com/ionide/Ionide-vim/issues/69
-local function inject_codelens_refresh(config)
-  local new_config = tbl_extend("keep", config, {})
-  new_config.on_attach = function(client, bufnr)
-    if config.on_attach then
-      config.on_attach(client, bufnr)
+  clients = {}
+  -- Reconfiguration must not leave two server generations publishing results.
+  local function removed()
+    for _, client in ipairs(stopping) do
+      if vim.lsp.get_client_by_id(client.id) then return false end
     end
-    vim.lsp.codelens.refresh()
+    return true
   end
-  return new_config
-end
-
-local function autostart_if_needed(m, config)
-  local auto_setup = (vim.g['fsharp#lsp_auto_setup'] == 1)
-  if auto_setup and not (config.autostart == false) then
-    m.autostart()  
+  local finished = vim.wait(1000, removed, 10)
+  if not finished then
+    for _, client in ipairs(stopping) do
+      if vim.lsp.get_client_by_id(client.id) then client:stop(true) end
+    end
+    finished = vim.wait(1000, removed, 10)
+  end
+  stopping_clients = false
+  if not finished then
+    command = nil
+    error('The previous Lattice server did not stop; configure it again after it exits')
   end
 end
 
-local function delegate_to_lspconfig(config)
-  local lspconfig = require('lspconfig')
-  local configs = require('lspconfig.configs')
-  if not (configs['lattice']) then
-    configs['lattice'] = {
-      default_config = get_default_config(),
-      docs = {
-        description = [[
-  https://github.com/ionide/Ionide-vim
-        ]],
-      },
-    }
-  end
-  lspconfig.lattice.setup(config)
+local function project_root(bufnr)
+  local name = vim.api.nvim_buf_get_name(bufnr)
+  if name == '' or vim.bo[bufnr].buftype ~= '' then return nil end
+  local manifests = vim.fs.find(function(file)
+    return file:match('%.fidproj$') ~= nil
+  end, { path = vim.fs.dirname(name), upward = true, type = 'file', limit = 1 })
+  return manifests[1] and vim.fs.dirname(manifests[1]) or nil
 end
 
-M.manager = nil
+local function attach(bufnr)
+  if stopping_clients or not command or not vim.api.nvim_buf_is_loaded(bufnr) then return end
+  local root = vim.bo[bufnr].filetype == 'clef' and project_root(bufnr) or nil
 
--- partially adopted from neovim/nvim-lspconfig, see lspconfig.LICENSE.md
-local function create_manager(config)
-  validate {
-    cmd = { config.cmd, "t", true },
-    root_dir = { config.root_dir, "f", true },
-    filetypes = { config.filetypes, "t", true },
-    on_attach = { config.on_attach, "f", true },
-    on_new_config = { config.on_new_config, "f", true },
-  }
-
-  local default_config = tbl_extend("keep", get_default_config(), util.default_config)
-  config = tbl_extend("keep", config, default_config)
-
-  local trigger
-  if config.filetypes then
-    trigger = "FileType " .. table.concat(config.filetypes, ",")
-  else
-    trigger = "BufReadPost *"
-  end
-
-  local get_root_dir = config.root_dir
-
-  function M.autostart()
-    local root_dir = get_root_dir(api.nvim_buf_get_name(0), api.nvim_get_current_buf())
-    if not root_dir then
-      root_dir = util.path.dirname(api.nvim_buf_get_name(0))
-    end
-    if not root_dir then
-      root_dir = vim.fn.getcwd()
-    end
-    root_dir = string.gsub(root_dir, "\\", "/")
-    api.nvim_command(
-      string.format(
-        "autocmd %s lua require'lattice'.manager.try_add_wrapper()",
-        "BufReadPost " .. root_dir .. "/*"
-      )
-    )
-    for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
-      local buf_dir = api.nvim_buf_get_name(bufnr)
-      if buf_dir:sub(1, root_dir:len()) == root_dir then
-        M.manager.try_add_wrapper(bufnr)
-      end
+  -- A renamed buffer or changed filetype must not stay with its former root.
+  for _, client in ipairs(vim.lsp.get_clients({ bufnr = bufnr })) do
+    if clients[client.id] and client.config.root_dir ~= root then
+      vim.lsp.buf_detach_client(bufnr, client.id)
     end
   end
+  if not root then return end
 
-  local reload = false
-  if M.manager then
-    for _, client in ipairs(M.manager.clients()) do
-      client.stop(true)
-    end
-    reload = true
-    M.manager = nil
-  end
-
-  local make_config = function(_root_dir)
-    local new_config = vim.tbl_deep_extend("keep", vim.empty_dict(), config)
-    new_config = vim.tbl_deep_extend("keep", new_config, default_config)
-    new_config.capabilities = new_config.capabilities or lsp.protocol.make_client_capabilities()
-    new_config.capabilities = vim.tbl_deep_extend("keep", new_config.capabilities, {
-      workspace = {
-        configuration = true,
-      },
-    })
-    if config.on_new_config then
-      pcall(config.on_new_config, new_config, _root_dir)
-    end
-    new_config.on_init = util.add_hook_after(new_config.on_init, function(client, _result)
-      function client.workspace_did_change_configuration(settings)
-        if not settings then
-          return
-        end
-        if vim.tbl_isempty(settings) then
-          settings = { [vim.type_idx] = vim.types.dictionary }
-        end
-        return client.notify("workspace/didChangeConfiguration", {
-          settings = settings,
-        })
-      end
-      if not vim.tbl_isempty(new_config.settings) then
-        client.workspace_did_change_configuration(new_config.settings)
-      end
-    end)
-    new_config._on_attach = new_config.on_attach
-    new_config.on_attach = vim.schedule_wrap(function(client, bufnr)
-      if bufnr == api.nvim_get_current_buf() then
-        M._setup_buffer(client.id, bufnr)
-      else
-        api.nvim_command(
-          string.format(
-            "autocmd BufEnter <buffer=%d> ++once lua require'lattice'._setup_buffer(%d,%d)",
-            bufnr,
-            client.id,
-            bufnr
-          )
-        )
-      end
-    end)
-    new_config.root_dir = _root_dir
-    return new_config
-  end
-  
-  local manager = util.server_per_root_dir_manager(function(_root_dir) return make_config(_root_dir) end)
-  function manager.try_add(bufnr)
-    bufnr = bufnr or api.nvim_get_current_buf()
-    if api.nvim_buf_get_option(bufnr, 'buftype') == 'nofile' then
-      return
-    end
-    local root_dir = get_root_dir(api.nvim_buf_get_name(bufnr), bufnr)
-    local id = manager.add(root_dir)
-    if id then
-      lsp.buf_attach_client(bufnr, id)
-    end
-  end
-  function manager.try_add_wrapper(bufnr)
-    bufnr = bufnr or api.nvim_get_current_buf()
-    local buftype = api.nvim_buf_get_option(bufnr, 'filetype')
-    if buftype == 'fsharp' then
-      manager.try_add(bufnr)
-      return
-    end
-  end
-  M.manager = manager
-  M.make_config = make_config
-  if reload and not (config.autostart == false) then
-    for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
-      manager.try_add_wrapper(bufnr)
-    end
-  else
-    autostart_if_needed(M, config)
-  end
+  local id = vim.lsp.start({
+    name = 'lattice',
+    cmd = vim.deepcopy(command),
+    root_dir = root,
+    get_language_id = function() return 'clef' end,
+    on_exit = function(_, _, client_id) clients[client_id] = nil end,
+  }, {
+    bufnr = bufnr,
+    reuse_client = function(client, config)
+      return clients[client.id] == true and client.config.root_dir == config.root_dir
+    end,
+  })
+  if id then clients[id] = true end
 end
 
--- partially adopted from neovim/nvim-lspconfig, see lspconfig.LICENSE.md
-function M._setup_buffer(client_id, bufnr)
-  local client = lsp.get_client_by_id(client_id)
-  if not client then
-    return
-  end
-  if client.config._on_attach then
-    client.config._on_attach(client, bufnr)
-  end
+local function attach_open_buffers()
+  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do attach(bufnr) end
 end
 
+--- Configure the explicit server argv; no server is downloaded or guessed.
+--- Repeating setup with the same argv is safe and does not restart clients.
 function M.setup(config)
-  local new_config = inject_codelens_refresh(config)
-  if lspconfig_is_present then
-    return delegate_to_lspconfig(new_config)
+  if vim.fn.has('nvim-0.11') ~= 1 then
+    error('Lattice requires Neovim 0.11 or newer')
   end
-  return create_manager(new_config)
-end
-
-function M.status()
-  if lspconfig_is_present then
-    print("* LSP server: handled by nvim-lspconfig")
-  elseif M.manager ~= nil then
-    if next(M.manager.clients()) == nil then
-      print("* LSP server: not started")
-    else
-      print("* LSP server: started")
-    end
-  else
-    print("* LSP server: not initialized")
+  local cmd = type(config) == 'table' and config.cmd or nil
+  if type(cmd) ~= 'table' or not vim.islist(cmd) or #cmd == 0 then
+    error('Lattice requires an explicit cmd array containing the server executable and arguments')
   end
-end
-
-function M.call(method, params, callback_key)
-  local handler = function(err, result, ctx, config)
-    if result ~= nil then
-      fn['fsharp#resolve_callback'](callback_key, {
-        result = result,
-        err = err,
-        client_id = ctx.client_id,
-        bufnr = ctx.bufnr
-      })
+  for _, arg in ipairs(cmd) do
+    if type(arg) ~= 'string' or arg == '' then
+      error('Every Lattice cmd entry must be a non-empty string')
     end
   end
-  lsp.buf_request(0, method, params, handler)
+  if vim.fn.executable(cmd[1]) ~= 1 then
+    error('Lattice server executable not found: ' .. cmd[1])
+  end
+
+  if not vim.deep_equal(command, cmd) then stop_clients() end
+  command = vim.deepcopy(cmd)
+  vim.api.nvim_create_augroup(group, { clear = true })
+  vim.api.nvim_create_autocmd({ 'FileType', 'BufEnter', 'BufFilePost' }, {
+    group = group,
+    callback = function(event) attach(event.buf) end,
+    desc = 'Attach Clef buffers to the explicitly configured Lattice server',
+  })
+  attach_open_buffers()
 end
 
-function M.notify(method, params)
-  lsp.buf_notify(0, method, params)
+--- Stop this plugin's clients and disable automatic attachment until setup.
+function M.stop()
+  pcall(vim.api.nvim_del_augroup_by_name, group)
+  command = nil
+  stop_clients()
+end
+
+--- Restart with the same explicit command and current project roots.
+function M.restart()
+  if not command then error('Configure Lattice with setup({ cmd = ... }) before restarting') end
+  stop_clients()
+  attach_open_buffers()
 end
 
 return M

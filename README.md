@@ -18,6 +18,14 @@ Build that DLL from Composer with `dotnet build src/Lattice.Server/Lattice.Serve
 
 Standard Neovim LSP handling supplies the capabilities the server advertises, including hover and diagnostics. The client adds no private `fsharp/*` requests or automatic code-lens polling. It does not infer dimensions, assign proof verdicts or reconstruct compiler facts.
 
+The planned interactive CLI is `clefx`, matching `.clefx` script files.
+Composer's [workbench plan](../Composer/docs/Interactive_Compiler_Workbench.md)
+owns the shared compiler/proof service and native LLVM execution bridge. Any
+future send-to-`clefx` client action must use that service's session identity and
+freshness rules. A SageFS/FSI bootstrap host runs the F# compiler implementation;
+it does not evaluate Clef semantics. Neither shared-session nor interactive
+execution support is implemented by this client today.
+
 Calling `setup` again with the same command is safe. A changed command replaces this plugin's clients. To control their lifetime explicitly:
 
 ```lua
